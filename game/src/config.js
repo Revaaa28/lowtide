@@ -3,6 +3,11 @@
 // value; weapons.js, rounds.js and hud.js all read from these tables, so a balance pass is
 // a one-file edit. Damage is per-hit before armour; spread is in radians and is the half-angle
 // of the cone a shot can leave the muzzle in — see weapons.js for how stance feeds it.
+// The automatic and semi weapons also carry a recoil PATTERN: a table of [yaw, pitch]
+// steps in radians, one per shot of a burst, applied by weapons.js as view climb. Each
+// gun walks its own way — the SMG wobbles, the rifle climbs and hooks left — so a burst
+// is a shape to learn and pull against, not a dice roll. Past the table's end the last
+// step repeats; the burst index resets after 0.4 s without firing.
 
 export const WEAPONS = {
   // The free sidearm everyone spawns with. Weak past mid range, exact when still.
@@ -11,6 +16,7 @@ export const WEAPONS = {
     dmg: { head: 88, body: 34, leg: 25 }, rpm: 352, mag: 12, reserve: 100, reloadS: 2.2,
     spread: { stand: 0.006, move: 0.045, crouch: 0.004, air: 0.09 },
     recoil: 0.011, pellets: 1, auto: false, zoom: 0,
+    pattern: [[0, 0.007], [0.001, 0.007], [-0.001, 0.006], [0.002, 0.006], [-0.002, 0.006], [0.001, 0.005]],
   },
   // Cheap automatic: strong up close, its spread blooms fast on the move.
   rusa9: {
@@ -18,6 +24,7 @@ export const WEAPONS = {
     dmg: { head: 62, body: 26, leg: 19 }, rpm: 750, mag: 30, reserve: 120, reloadS: 2.4,
     spread: { stand: 0.012, move: 0.06, crouch: 0.009, air: 0.11 },
     recoil: 0.008, pellets: 1, auto: true, zoom: 0,
+    pattern: [[0, 0.005], [0.003, 0.005], [-0.003, 0.005], [0.004, 0.005], [-0.004, 0.004], [0.003, 0.004], [-0.002, 0.004], [0.002, 0.004], [-0.003, 0.003], [0.002, 0.003]],
   },
   // The standard rifle. A standing headshot kills through no helmet; recoil climbs in bursts.
   ar57: {
@@ -25,6 +32,7 @@ export const WEAPONS = {
     dmg: { head: 132, body: 33, leg: 24 }, rpm: 666, mag: 30, reserve: 90, reloadS: 2.5,
     spread: { stand: 0.008, move: 0.07, crouch: 0.005, air: 0.12 },
     recoil: 0.014, pellets: 1, auto: true, zoom: 0,
+    pattern: [[0, 0.009], [0.002, 0.010], [-0.002, 0.011], [0.003, 0.010], [-0.004, 0.009], [0.005, 0.008], [-0.005, 0.008], [0.004, 0.007], [-0.003, 0.007], [0.002, 0.006]],
   },
   // Pump shotgun: eight pellets, one shell decides a doorway, useless down a lane.
   banteng8: {
@@ -46,6 +54,13 @@ export const GRENADES = {
   nanas: { name: 'Nanas Frag', price: 300, kind: 'frag', dmg: 85, radius: 5.5 },
   flash: { name: 'Flash Charge', price: 200, kind: 'flash', radius: 14, duration: 2.8 },
   smoke: { name: 'Smoke Pot', price: 300, kind: 'smoke', radius: 4.5, duration: 14 },
+};
+
+// One utility item that is not thrown: the defuse kit. A defender who carries one
+// defuses in TIMING.defuseKit instead of TIMING.defuseNoKit — rounds.js reads the
+// carrier's hasKit when a defuse channel completes. Bought once, kept all match.
+export const UTIL = {
+  kit: { name: 'Defuse Kit', price: 400 },
 };
 
 // Round money. loss[] is the consecutive-loss ladder: the deeper a team's losing streak,

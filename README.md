@@ -11,15 +11,18 @@ The map is one lock basin with three lanes — a warehouse in the west, the lock
 Features:
 
 - Five weapons with distinct handling: PK-9 Kakatua pistol, Rusa-9 SMG ($1,200), Banteng-8 Pump shotgun ($1,800), AR-57 Anoa rifle ($2,700) and the bolt-action Longbow-12 ($4,500)
+- Per-weapon recoil patterns: every automatic walks its own climb, a shape to learn and pull against
 - Three grenades: Nanas Frag, Flash Charge and Smoke Pot
-- Bomb plant/defuse objective with kit and no-kit defuse times
+- Bomb plant/defuse objective; a $400 Defuse Kit from the buy menu halves a defuse (5 s against 10 s)
 - Bot AI with routes, holds and reactions to sound and sight
+- A live minimap with honest spotting (teammates always, enemies only when seen or heard), round-history pips, and a kill feed that tags headshots
+- Bot radio callouts on first contact, plants and defuses
 - Fixed-step simulation, decoupled from rendering
 - Zero network requests — the whole game is static files
 
 ## Controls
 
-WASD to move, mouse to look, left mouse button to fire. **R** reloads, **Ctrl** or **C** crouches, **B** opens the buy menu, holding **E** plants or defuses the charge, and **Tab** shows the scoreboard.
+WASD to move, mouse to look, left mouse button to fire. **R** reloads, **Ctrl** or **C** crouches, holding **Shift** walks quietly — slower, but your footsteps make no noise for bot ears. **B** opens the buy menu, holding **E** plants or defuses the charge, and **Tab** shows the scoreboard.
 
 ## Run it
 

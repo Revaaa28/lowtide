@@ -10,7 +10,7 @@
 import { G } from './state.js';
 import { MAP } from './map.js';
 import { moveActor, rayHit, eyeHeight } from './physics.js';
-import { tryFire, startReload, switchWeapon, buyWeapon, buyGrenade, throwGrenade } from './weapons.js';
+import { tryFire, startReload, switchWeapon, buyWeapon, buyGrenade, buyKit, throwGrenade } from './weapons.js';
 import { isSmokeBlocking } from './fx.js';
 import { sfx } from './audio.js';
 
@@ -87,6 +87,29 @@ function brain(a) {
 let planRound = -1;
 let planSite = 'A';
 let lastPhase = '';
+
+// --- callouts ------------------------------------------------------------------
+
+// Bots talk, a little: a first contact, a plant or a defuse starting is pushed into
+// G.callouts (kept here — G.feed is kills only) and hud.js shows the lines beside the
+// kill feed. A per-bot cooldown and a per-round cap keep it to a few lines a round:
+// radio discipline, not a commentary track.
+let callRound = -1;
+function callout(a, b, text, now, force = false) {
+  if (G.round !== callRound) { callRound = G.round; G.callouts = []; }
+  if (!force && now - (b.callAt || -9) < 8) return;
+  if (G.callouts.length > 7) return;
+  b.callAt = now;
+  G.callouts.push({ name: a.name, team: a.team, text });
+}
+
+function siteLabel(x, z) {
+  for (const key of ['A', 'B']) {
+    const s = MAP.sites[key];
+    if (Math.hypot(s.x - x, s.z - z) <= s.r * 2) return key;
+  }
+  return 'mid';
+}
 
 function setGoal(a, b, node, state = 'route') {
   b.goalNode = node;
@@ -212,7 +235,11 @@ function perceive(a, b, now) {
     const d = Math.hypot(e.pos.x - ex, e.pos.z - ez);
     if (d < bd) { bd = d; best = id; }
   }
-  if (best !== -1 && !prevVis.has(best)) b.reactAt = now + 0.25 + Math.random() * 0.25;
+  if (best !== -1 && !prevVis.has(best)) {
+    b.reactAt = now + 0.25 + Math.random() * 0.25;
+    const e = G.actors[best];
+    callout(a, b, 'contact ' + siteLabel(e.pos.x, e.pos.z), now);
+  }
   if (best !== -1) b.targetId = best;
   else if (b.targetId !== -1 && !G.actors[b.targetId].alive) b.targetId = -1;
 }
@@ -239,7 +266,7 @@ function decide(a, b, now) {
   if (G.phase === 'planted') {
     if (a.team === 'def' && b.role === 'defuser') {
       const d = Math.hypot(G.bomb.x - a.pos.x, G.bomb.z - a.pos.z);
-      if (d < 1.7) { if (b.state !== 'defuse') { b.state = 'defuse'; a.defuseT = 0; } return; }
+      if (d < 1.7) { if (b.state !== 'defuse') { b.state = 'defuse'; a.defuseT = 0; callout(a, b, 'defusing', now, true); } return; }
       if (b.state === 'defuse') { a.defuseT = 0; if (G.bomb.state === 'defusing') G.bomb.state = 'planted'; }
       if (b.state !== 'route' || b.goalNode !== nearestNode(G.bomb.x, G.bomb.z)) setGoal(a, b, nearestNode(G.bomb.x, G.bomb.z));
       return;
@@ -264,7 +291,7 @@ function decide(a, b, now) {
     const d = Math.hypot(s.x - a.pos.x, s.z - a.pos.z);
     if (d < s.r - 0.6) {
       if (b.vis.size) { b.state = 'engage'; a.plantT = 0; }
-      else if (b.state !== 'plant') { b.state = 'plant'; a.plantT = 0; }
+      else if (b.state !== 'plant') { b.state = 'plant'; a.plantT = 0; callout(a, b, 'planting ' + (b.planSite || 'A'), now, true); }
       return;
     }
     if (b.state === 'plant') { a.plantT = 0; if (G.bomb.state === 'planting') G.bomb.state = 'carried'; }
@@ -326,8 +353,10 @@ function followPath(a, b, dt, now) {
     }
     b.lastX = a.pos.x; b.lastZ = a.pos.z; b.stuckAt = now;
   }
-  // Footsteps: audible to enemies nearby, and to the player as soft taps.
-  if (now >= b.stepAt) {
+  // Footsteps: audible to enemies nearby, and to the player as soft taps. A bot in
+  // retreat moves quietly — falling back is done carefully or not at all — which is
+  // the same silence the player's Shift quiet-walk buys (weapons.js).
+  if (now >= b.stepAt && b.state !== 'retreat') {
     b.stepAt = now + 0.38;
     for (const e of G.actors) {
       if (e.team === a.team || !e.alive) continue;
@@ -391,6 +420,9 @@ function buyLogic(a, b) {
     else if (a.money >= 2700) buyWeapon(a, 'ar57');
     else if (a.money >= 1200) buyWeapon(a, 'rusa9');
   }
+  // Defenders carry the defuse kit before anything else: it is the cheapest seconds
+  // in the game, and rounds.js honours hasKit the moment a retake reaches the charge.
+  if (a.team === 'def' && !a.hasKit && a.money >= 400) buyKit(a);
   if (a.money >= 900 && !w.grenades.includes('nanas')) buyGrenade(a, 'nanas');
   if (a.money >= 700) buyGrenade(a, a.team === 'atk' ? 'smoke' : 'flash');
 }

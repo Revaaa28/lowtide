@@ -163,34 +163,172 @@ export const MAP = {
   bounds: { minX: -47.5, maxX: 47.5, minZ: -31.5, maxZ: 31.5 },
 };
 
+// --- procedural paint ---------------------------------------------------------
+// Every surface texture is drawn once on a small canvas at startup: panel seams, rust
+// streaks, wet patches and stencil marks are what let the dawn light read as texture
+// instead of flat colour. Painters draw bright; each material's colour carries the hue.
+let _seed = 11;
+const rnd = () => (_seed = (_seed * 16807) % 2147483647) / 2147483647;
+function ctex(size, draw, rx = 1, ry = 1) {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = size;
+  draw(cv.getContext('2d'), size);
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(rx, ry);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+function speck(x, s, n, col, a, r = 2) {
+  x.fillStyle = col;
+  for (let i = 0; i < n; i++) { x.globalAlpha = rnd() * a; x.fillRect(rnd() * s, rnd() * s, r, r); }
+  x.globalAlpha = 1;
+}
+function blobs(x, s, n, col, a, r) {
+  x.fillStyle = col;
+  for (let i = 0; i < n; i++) {
+    x.globalAlpha = rnd() * a;
+    x.beginPath(); x.arc(rnd() * s, rnd() * s, 4 + rnd() * r, 0, 7); x.fill();
+  }
+  x.globalAlpha = 1;
+}
+function streaks(x, s, n, col, a) {
+  x.fillStyle = col;
+  for (let i = 0; i < n; i++) { x.globalAlpha = rnd() * a; x.fillRect(rnd() * s, 0, 2 + rnd() * 5, s * (0.3 + rnd() * 0.7)); }
+  x.globalAlpha = 1;
+}
+function seams(x, s) {
+  x.strokeStyle = 'rgba(34,38,42,0.6)'; x.lineWidth = 3;
+  for (const p of [0, 128]) { x.beginPath(); x.moveTo(p, 0); x.lineTo(p, s); x.moveTo(0, p); x.lineTo(s, p); x.stroke(); }
+}
+const TEX = {
+  concrete: ctex(256, (x, s) => {
+    x.fillStyle = '#ccd0d2'; x.fillRect(0, 0, s, s);
+    blobs(x, s, 14, '#55534c', 0.16, 42);
+    speck(x, s, 500, '#3f4245', 0.25); speck(x, s, 300, '#ffffff', 0.18);
+    seams(x, s); streaks(x, s, 5, '#6e4a28', 0.13);
+  }, 2, 1),
+  warehouse: ctex(256, (x, s) => {
+    x.fillStyle = '#d3ccbf'; x.fillRect(0, 0, s, s);
+    for (let i = 0; i < s; i += 16) { x.fillStyle = i % 32 ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.07)'; x.fillRect(i, 0, 8, s); }
+    blobs(x, s, 10, '#4c463c', 0.2, 40);
+    streaks(x, s, 9, '#74522e', 0.22); speck(x, s, 260, '#3a362e', 0.25);
+    const g = x.createLinearGradient(0, s * 0.8, 0, s);
+    g.addColorStop(0, 'rgba(30,28,24,0)'); g.addColorStop(1, 'rgba(30,28,24,0.4)');
+    x.fillStyle = g; x.fillRect(0, s * 0.8, s, s * 0.2);
+  }, 2, 1),
+  floor: ctex(256, (x, s) => {
+    x.fillStyle = '#bcc0c2'; x.fillRect(0, 0, s, s);
+    blobs(x, s, 16, '#394046', 0.34, 58); blobs(x, s, 8, '#e9e4d2', 0.06, 30);
+    speck(x, s, 700, '#2f3336', 0.3); speck(x, s, 260, '#f4f2ea', 0.15);
+    seams(x, s);
+  }, 14, 10),
+  steel: ctex(256, (x, s) => {
+    x.fillStyle = '#b4bcc2'; x.fillRect(0, 0, s, s);
+    for (let i = 0; i < s; i += 3) { x.fillStyle = rnd() > 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'; x.fillRect(i, 0, 1, s); }
+    streaks(x, s, 12, '#7c4520', 0.3); blobs(x, s, 8, '#5e4632', 0.2, 26);
+    speck(x, s, 220, '#2e2a24', 0.25);
+    x.strokeStyle = 'rgba(40,44,48,0.5)'; x.lineWidth = 3; x.strokeRect(1, 1, s - 2, s - 2);
+  }, 2, 1),
+  rust: ctex(256, (x, s) => {
+    x.fillStyle = '#d98d54'; x.fillRect(0, 0, s, s);
+    blobs(x, s, 22, '#8a4416', 0.5, 44); blobs(x, s, 14, '#5e2c0e', 0.4, 30); blobs(x, s, 8, '#eda763', 0.35, 22);
+    streaks(x, s, 10, '#6e3410', 0.3); speck(x, s, 420, '#381b06', 0.35);
+  }, 1.5, 1),
+  moss: ctex(256, (x, s) => {
+    x.fillStyle = '#a9b596'; x.fillRect(0, 0, s, s);
+    blobs(x, s, 24, '#46582f', 0.45, 40); blobs(x, s, 12, '#6d7f4c', 0.4, 26);
+    speck(x, s, 380, '#2f3d1e', 0.3); speck(x, s, 90, '#7c4a20', 0.3);
+  }, 1.5, 1),
+  crate: ctex(256, (x, s) => {
+    x.fillStyle = '#caa26a'; x.fillRect(0, 0, s, s);
+    for (let y = 0; y < s; y += 64) {
+      x.fillStyle = `rgba(60,38,16,${0.05 + rnd() * 0.1})`; x.fillRect(0, y, s, 64);
+      x.fillStyle = 'rgba(40,26,10,0.8)'; x.fillRect(0, y, s, 3);
+      x.fillStyle = '#5a3d1c';
+      for (let i = 0; i < 26; i++) { x.globalAlpha = rnd() * 0.16; x.fillRect(rnd() * s, y + rnd() * 60, 8 + rnd() * 30, 1.5); }
+      x.globalAlpha = 1;
+    }
+    x.fillStyle = 'rgba(30,24,16,0.6)';
+    x.font = 'bold 30px ui-monospace, monospace'; x.fillText('LT-07', 20, 118);
+    x.font = 'bold 17px ui-monospace, monospace'; x.fillText('LOCKTIDE FREIGHT', 20, 146);
+    for (const [nx, ny] of [[10, 10], [240, 10], [10, 240], [240, 240]]) { x.beginPath(); x.arc(nx, ny, 4, 0, 7); x.fill(); }
+  }),
+  hazard: ctex(128, (x, s) => {
+    x.fillStyle = '#c9a227'; x.fillRect(0, 0, s, s);
+    x.fillStyle = '#24211c';
+    for (let i = -1; i < 3; i++) {
+      x.beginPath();
+      x.moveTo(i * 64, 0); x.lineTo(i * 64 + 32, 0); x.lineTo(i * 64 + 32 - s, s); x.lineTo(i * 64 - s, s);
+      x.closePath(); x.fill();
+    }
+    speck(x, s, 200, '#3a2c10', 0.3);
+  }, 3, 1),
+};
+// Painted site roundel: ring + letter, worn back with eraser speckle so it reads as
+// old paint on concrete, not a UI overlay. Arrows point the way down the approach lanes.
+function siteDecal(letter, col) {
+  return ctex(256, (x, s) => {
+    x.strokeStyle = 'rgba(233,230,223,0.85)'; x.lineWidth = 11;
+    x.beginPath(); x.arc(s / 2, s / 2, s / 2 - 10, 0, 7); x.stroke();
+    x.fillStyle = col; x.font = `bold ${s * 0.54}px ui-monospace, monospace`;
+    x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillText(letter, s / 2, s / 2 + s * 0.04);
+    x.globalCompositeOperation = 'destination-out';
+    speck(x, s, 650, '#000', 0.9, 3); blobs(x, s, 10, '#000', 0.5, 16);
+    x.globalCompositeOperation = 'source-over';
+  });
+}
+const arrowTex = ctex(128, (x, s) => {
+  x.fillStyle = 'rgba(233,230,223,0.8)';
+  x.beginPath();
+  x.moveTo(s / 2, 10); x.lineTo(s * 0.82, s * 0.52); x.lineTo(s * 0.6, s * 0.52); x.lineTo(s * 0.6, s - 14);
+  x.lineTo(s * 0.4, s - 14); x.lineTo(s * 0.4, s * 0.52); x.lineTo(s * 0.18, s * 0.52);
+  x.closePath(); x.fill();
+  x.globalCompositeOperation = 'destination-out';
+  speck(x, s, 260, '#000', 0.9, 3);
+  x.globalCompositeOperation = 'source-over';
+});
+
+// Painted wall signage: the site's name stencilled straight onto its building in two
+// lines — the building's name, then the site letter in the site's colour — inside a
+// worn painted border. Same eraser wear as the roundels, so it reads as old paint on
+// the wall, not a label pasted over the world.
+function signTexture(name, sub, col) {
+  const cv = document.createElement('canvas');
+  cv.width = 512; cv.height = 160;
+  const x = cv.getContext('2d');
+  x.textAlign = 'center';
+  x.strokeStyle = 'rgba(233,230,223,0.5)'; x.lineWidth = 5;
+  x.strokeRect(9, 9, 494, 142);
+  x.fillStyle = 'rgba(233,230,223,0.92)';
+  x.font = 'bold 58px ui-monospace, monospace';
+  x.fillText(name, 256, 70);
+  x.fillStyle = col;
+  x.font = 'bold 42px ui-monospace, monospace';
+  x.fillText(sub, 256, 128);
+  x.globalCompositeOperation = 'destination-out';
+  speck(x, 512, 550, '#000', 0.9, 3); blobs(x, 512, 8, '#000', 0.45, 18);
+  x.globalCompositeOperation = 'source-over';
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
 // The palette of the place: wet concrete, rust, moss, steel — lit by a low warm sun.
 const MATERIALS = {
-  concrete: new THREE.MeshStandardMaterial({ color: 0x8a8d90, roughness: 0.95 }),
-  warehouse: new THREE.MeshStandardMaterial({ color: 0x7d7468, roughness: 0.9 }),
-  gate: new THREE.MeshStandardMaterial({ color: 0x8c5a24, roughness: 0.7, metalness: 0.35 }),
-  metal: new THREE.MeshStandardMaterial({ color: 0x6b7280, roughness: 0.5, metalness: 0.6 }),
-  rust: new THREE.MeshStandardMaterial({ color: 0xa34d1c, roughness: 0.8, metalness: 0.2 }),
-  moss: new THREE.MeshStandardMaterial({ color: 0x5a6e46, roughness: 0.9 }),
-  crate: new THREE.MeshStandardMaterial({ color: 0x9a7b4f, roughness: 0.85 }),
-  machine: new THREE.MeshStandardMaterial({ color: 0x4f6b6e, roughness: 0.45, metalness: 0.55 }),
+  concrete: new THREE.MeshStandardMaterial({ map: TEX.concrete, color: 0x8f939a, roughness: 0.95 }),
+  warehouse: new THREE.MeshStandardMaterial({ map: TEX.warehouse, color: 0x877c6c, roughness: 0.9 }),
+  gate: new THREE.MeshStandardMaterial({ map: TEX.steel, color: 0xd09a58, roughness: 0.6, metalness: 0.35 }),
+  metal: new THREE.MeshStandardMaterial({ map: TEX.steel, color: 0x98a2ac, roughness: 0.5, metalness: 0.6 }),
+  rust: new THREE.MeshStandardMaterial({ map: TEX.rust, roughness: 0.8, metalness: 0.2 }),
+  moss: new THREE.MeshStandardMaterial({ map: TEX.moss, color: 0x5f7046, roughness: 0.9 }),
+  crate: new THREE.MeshStandardMaterial({ map: TEX.crate, color: 0xa8875c, roughness: 0.85 }),
+  machine: new THREE.MeshStandardMaterial({ map: TEX.steel, color: 0x557276, roughness: 0.45, metalness: 0.55 }),
+  hazard: new THREE.MeshStandardMaterial({ map: TEX.hazard, roughness: 0.8 }),
 };
-
-function textSprite(text, scale = 12) {
-  const cv = document.createElement('canvas');
-  cv.width = 512; cv.height = 128;
-  const ctx = cv.getContext('2d');
-  ctx.font = 'bold 54px ui-monospace, monospace';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = 'rgba(10,12,14,0.55)';
-  ctx.fillRect(56, 24, 400, 80);
-  ctx.fillStyle = '#ffd9a0';
-  ctx.fillText(text, 256, 66);
-  const tex = new THREE.CanvasTexture(cv);
-  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
-  spr.scale.set(scale, scale / 4, 1);
-  return spr;
-}
 
 // Raises the whole scene from the data above: one mesh per collider, the channel dug as
 // geometry (its floor and walls sit below the ground slab), dressing that carries no
@@ -207,17 +345,20 @@ export function buildMap(scene) {
   };
 
   // Ground slab and the channel: floor, side walls, end walls, a skin of leftover water.
-  const groundMat = new THREE.MeshStandardMaterial({ color: 0x6f7276, roughness: 0.92 });
+  const groundMat = new THREE.MeshStandardMaterial({ map: TEX.floor, color: 0x767a7e, roughness: 0.85 });
   box3(-60, -0.5, -45, 60, 0, 45, groundMat, false);
-  const darkMat = new THREE.MeshStandardMaterial({ color: 0x4c4f52, roughness: 0.95 });
-  box3(-6, -2.5, -30, 6, -2.2, 30, darkMat, false);
+  const darkMat = new THREE.MeshStandardMaterial({ map: TEX.concrete, color: 0x51555a, roughness: 0.95 });
+  const wetTex = TEX.floor.clone();
+  wetTex.repeat.set(2, 10); wetTex.needsUpdate = true;
+  const wetMat = new THREE.MeshStandardMaterial({ map: wetTex, color: 0x5c6165, roughness: 0.42, metalness: 0.18 });
+  box3(-6, -2.5, -30, 6, -2.2, 30, wetMat, false);
   box3(-6.6, -2.2, -30, -6, 0, 30, darkMat, false);
   box3(6, -2.2, -30, 6.6, 0, 30, darkMat, false);
   box3(-6, -2.2, -30.6, 6, 0, -30, darkMat, false);
   box3(-6, -2.2, 30, 6, 0, 30.6, darkMat, false);
   const water = new THREE.Mesh(
-    new THREE.PlaneGeometry(11.6, 48),
-    new THREE.MeshStandardMaterial({ color: 0x16242c, roughness: 0.15, metalness: 0.85 }),
+    new THREE.PlaneGeometry(11.6, 58),
+    new THREE.MeshStandardMaterial({ color: 0x1d3038, roughness: 0.06, metalness: 0.9 }),
   );
   water.rotation.x = -Math.PI / 2;
   water.position.set(0, -2.12, 0);
@@ -226,9 +367,11 @@ export function buildMap(scene) {
     if (zn.y > -2.2) box3(zn.x0, zn.y - 0.3, zn.z0, zn.x1, zn.y, zn.z1, darkMat, false);
   }
 
-  // One mesh per collider, in the material of its kind.
+  // One mesh per collider, in the material of its kind. Lock gates get a hazard-stripe
+  // cap (dressing only, no collider) so the gate line reads from the catwalks above.
   for (const c of colliders) {
     box3(c.x0, c.y0, c.z0, c.x1, c.y0 + c.h, c.z1, MATERIALS[c.kind] || MATERIALS.concrete);
+    if (c.kind === 'gate') box3(c.x0, c.y0 + c.h, c.z0, c.x1, c.y0 + c.h + 0.07, c.z1, MATERIALS.hazard, false);
   }
 
   // Catwalk rails and posts, bridge rails (dressing only — the platforms already collide).
@@ -251,7 +394,7 @@ export function buildMap(scene) {
   }
 
   // Gantry crane over the east lane: legs, beam, trolley and a hanging hook.
-  const craneMat = new THREE.MeshStandardMaterial({ color: 0xb3541e, roughness: 0.6, metalness: 0.4 });
+  const craneMat = new THREE.MeshStandardMaterial({ map: TEX.rust, color: 0xf0e6da, roughness: 0.6, metalness: 0.35 });
   box3(39.4, 0, -20.6, 40.6, 9, -19.4, craneMat);
   box3(39.4, 0, 15.4, 40.6, 9, 16.6, craneMat);
   box3(24, 9, -2.6, 46, 10, -1.4, craneMat);
@@ -272,7 +415,8 @@ export function buildMap(scene) {
     scene.add(head);
   }
 
-  // Site rings and floating labels — the two places the round is about.
+  // Site rings — the two places the round is about. The names live on the buildings
+  // themselves (the wall signs below), not on floating labels.
   for (const key of ['A', 'B']) {
     const s = MAP.sites[key];
     const ring = new THREE.Mesh(
@@ -283,10 +427,43 @@ export function buildMap(scene) {
     ring.position.set(s.x, 0.07, s.z);
     ring.name = 'siteRing' + key;
     scene.add(ring);
-    const label = textSprite(key + ' · ' + s.label.toUpperCase());
-    label.position.set(s.x, 6.4, s.z);
-    label.name = 'siteLabel' + key;
-    scene.add(label);
+    // The painted roundel on the concrete inside the ring: letter + circle, worn thin.
+    const decal = new THREE.Mesh(
+      new THREE.PlaneGeometry(s.r * 2 - 1, s.r * 2 - 1),
+      new THREE.MeshBasicMaterial({ map: siteDecal(key, key === 'A' ? '#e86a2a' : '#5b8dd6'), transparent: true, depthWrite: false }),
+    );
+    decal.rotation.x = -Math.PI / 2;
+    decal.position.set(s.x, 0.05, s.z);
+    scene.add(decal);
+  }
+
+  // Wall signs, painted on the buildings and read down the approach: the Pump House
+  // name on its south wall, over the yard the attackers cross; the Gate Winch name
+  // on the hut's west wall, down the gantry lane. Each is sized to the wall it sits
+  // on — paint does not float past the edges of its building.
+  const signA = new THREE.Mesh(new THREE.PlaneGeometry(3.3, 1.03), new THREE.MeshBasicMaterial({ map: signTexture('PUMP HOUSE', 'SITE A', '#e86a2a'), transparent: true, depthWrite: false }));
+  signA.position.set(-40.25, 1.9, -20.72);
+  scene.add(signA);
+  const signB = new THREE.Mesh(new THREE.PlaneGeometry(7.6, 2.375), new THREE.MeshBasicMaterial({ map: signTexture('GATE WINCH', 'SITE B', '#5b8dd6'), transparent: true, depthWrite: false }));
+  signB.position.set(38.22, 1.78, 20);
+  signB.rotation.y = -Math.PI / 2;
+  scene.add(signB);
+
+  // Hazard paint along both channel rims — the edge a player reads before dropping in.
+  const rimTex = TEX.hazard.clone();
+  rimTex.repeat.set(1, 26); rimTex.needsUpdate = true;
+  const rimMat = new THREE.MeshStandardMaterial({ map: rimTex, roughness: 0.8 });
+  box3(-6.62, 0, -30, -6.3, 0.03, 30, rimMat, false);
+  box3(6.3, 0, -30, 6.62, 0.03, 30, rimMat, false);
+
+  // Worn directional arrows stencilled on the approach lanes (rotation z orients them:
+  // 0 = north toward A side, PI/2 = west, -PI/2 = east, PI = south toward B).
+  const arrowMat = new THREE.MeshBasicMaterial({ map: arrowTex, transparent: true, depthWrite: false });
+  for (const [ax, az, a] of [[-20, -25, Math.PI / 2], [-30, -25, Math.PI / 2], [26, 20, -Math.PI / 2], [34, 8, Math.PI]]) {
+    const p = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.6), arrowMat);
+    p.rotation.set(-Math.PI / 2, 0, a);
+    p.position.set(ax, 0.05, az);
+    scene.add(p);
   }
 
   // Gate warning lights: small amber blocks that read from down the channel.

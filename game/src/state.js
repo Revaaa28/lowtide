@@ -50,7 +50,7 @@ function makeActor(id, team, bot, name) {
     pos: { x: 0, y: 0, z: 0 },
     vel: { x: 0, y: 0, z: 0 },
     yaw: 0, pitch: 0,
-    hp: 100, armor: 0, alive: true,
+    hp: 100, armor: 0, hasKit: false, alive: true,
     crouch: false, onGround: true,
     money: ECON.start, kills: 0, deaths: 0,
     weapon: freshLoadout(),

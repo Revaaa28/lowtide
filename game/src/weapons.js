@@ -10,9 +10,9 @@
 // $300 and the bomb hitting the ground when its carrier falls — so rounds.js only has
 // to watch the score.
 
-import { WEAPONS, GRENADES, ECON } from './config.js';
+import { WEAPONS, GRENADES, ECON, UTIL } from './config.js';
 import { G, localPlayer } from './state.js';
-import { Input, pressed } from './input.js';
+import { Input, pressed, quietHeld } from './input.js';
 import { rayHit, eyeHeight } from './physics.js';
 import { FX, pulseMuzzle } from './render.js';
 import { spawnTracer, spawnImpact, throwGrenadeFx, updateFx } from './fx.js';
@@ -228,6 +228,9 @@ export function tryFire(actor) {
   }
   inst.ammo -= 1;
   inst.shotsFired += 1;
+  if (simNow - inst.lastShotAt > 0.4) inst.burst = 0;   // a pause starts a fresh burst
+  const burstIdx = inst.burst || 0;
+  inst.burst = burstIdx + 1;
   inst.lastShotAt = simNow;
   inst.nextShotAt = simNow + 60 / def.rpm;
   inst.bloom = Math.min(0.05, (inst.bloom || 0) + def.recoil * 1.1);
@@ -267,11 +270,20 @@ export function tryFire(actor) {
     traceShot(actor, def, inst.id, _eye.x, _eye.y, _eye.z, dx / dl, dy / dl, dz / dl);
   }
 
-  // Recoil: the view climbs by most of the kick (the rest is render.js's camera kick)
-  // and walks sideways on a fixed pattern, so a practiced burst can be pulled back
-  // onto target — and an unpracticed one climbs off it.
-  actor.pitch = Math.min(1.45, actor.pitch + def.recoil * 0.6);
-  actor.yaw += Math.sin(inst.shotsFired * 2.3) * def.recoil * 0.4;
+  // Recoil: a weapon with a pattern table (config.js) climbs it step by step — pitch
+  // plus a sideways walk in a fixed shape, so a practiced burst can be pulled back
+  // onto target and an unpracticed one climbs off it. The rest keep the generic kick:
+  // most of it into the view (the remainder is render.js's camera kick), walking
+  // sideways on a fixed phase of the shot count.
+  const pat = def.pattern;
+  if (pat) {
+    const s = pat[Math.min(burstIdx, pat.length - 1)];
+    actor.yaw += s[0];
+    actor.pitch = Math.min(1.45, actor.pitch + s[1]);
+  } else {
+    actor.pitch = Math.min(1.45, actor.pitch + def.recoil * 0.6);
+    actor.yaw += Math.sin(inst.shotsFired * 2.3) * def.recoil * 0.4;
+  }
   if (def.zoom) inst.zoomed = false;   // a bolt-action leaves the scope after each shot
   return true;
 }
@@ -336,6 +348,17 @@ export function buyGrenade(actor, type) {
   return true;
 }
 
+// The defuse kit: bought once, carried all match. rounds.js halves the carrier's
+// defuse channel (TIMING.defuseKit against defuseNoKit); nothing else reads hasKit.
+export function buyKit(actor) {
+  if (G.phase !== 'buy') return false;
+  if (actor.hasKit || actor.money < UTIL.kit.price) return false;
+  actor.money -= UTIL.kit.price;
+  actor.hasKit = true;
+  sfx('buy');
+  return true;
+}
+
 // --- grenades --------------------------------------------------------------------------
 
 export function throwGrenade(actor, type) {
@@ -359,6 +382,25 @@ export function throwGrenade(actor, type) {
 // --- per-step driver ---------------------------------------------------------------------
 
 function localInput(me) {
+  // Quiet walk (Shift, input.js): slower through physics.js's speedMul lever, and
+  // the footsteps below never happen — silence is the trade for pace.
+  const quiet = quietHeld();
+  me.quiet = quiet;
+  me.speedMul = quiet ? 0.55 : 1;
+  // Footsteps: a running player is a noise on the bots' map on the same terms as a
+  // bot's own steps (9 m, every 0.38 s — bots.js). Quiet-walking or crouch-walking
+  // makes none, which is the whole point of both.
+  const speed = Math.hypot(me.vel.x, me.vel.z);
+  if (me.onGround && !quiet && !me.crouch && speed > 2 && simNow >= (me.stepAt || 0)) {
+    me.stepAt = simNow + 0.38;
+    for (const e of G.actors) {
+      if (e.team === me.team || !e.alive) continue;
+      if (Math.hypot(e.pos.x - me.pos.x, e.pos.z - me.pos.z) < 9) {
+        e.hearEvents.push({ x: me.pos.x, z: me.pos.z, t: simNow, kind: 'step' });
+        if (e.hearEvents.length > 10) e.hearEvents.shift();
+      }
+    }
+  }
   if (pressed('Digit1')) switchWeapon(me, 'primary');
   else if (pressed('Digit2')) switchWeapon(me, 'secondary');
   else if (pressed('Digit3')) switchWeapon(me, 'grenade');

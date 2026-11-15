@@ -228,6 +228,25 @@ function deploySmoke(g) {
   }
 }
 
+// Poses one pooled smoke volume already deployed, for the staged screenshot scenes:
+// the same mesh and material a thrown Smoke Pot makes, set straight to its grown
+// state because the staged sim never steps updateFx to grow it.
+export function stageSmoke(x, z, groundY, opacity = 0.85) {
+  if (!root) return;
+  const def = GRENADES.smoke;
+  for (const s of smokes) {
+    if (s.until > 0) continue;
+    s.x = x; s.y = groundY + def.radius * 0.55; s.z = z;
+    s.r = def.radius;
+    s.bornAt = -10; s.until = 1e9;
+    s.mesh.position.set(s.x, s.y, s.z);
+    s.mesh.scale.setScalar(def.radius);
+    s.mesh.material.opacity = opacity;
+    s.mesh.visible = true;
+    return;
+  }
+}
+
 // True when the straight sight line between two points crosses a live smoke volume —
 // bots.js asks this before it lets a bot see through a smoked lane.
 export function isSmokeBlocking(x1, y1, z1, x2, y2, z2) {

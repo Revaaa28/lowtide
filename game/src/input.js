@@ -28,6 +28,14 @@ export function down(code) {
   return Input.keys.has(code);
 }
 
+// Quiet walk is Shift (either side), held: weapons.js reads it each step to slow the
+// player through physics.js's speedMul and to silence their footsteps entirely —
+// the counter to bot hearing. It needs no state of its own; the keys set above
+// already tracks Shift like any other code.
+export function quietHeld() {
+  return down('ShiftLeft') || down('ShiftRight');
+}
+
 export function pressed(code) {
   return Input.pressed.has(code);
 }
@@ -145,6 +153,32 @@ export function applyStage(name) {
     place(d0, -36.9, -24.1, -0.7, { crouch: true, weapon: 'rusa9' });
     place(d1, -37, -18.6, 3.14, { weapon: 'ar57' });
     place(d2, -20, -15, -1.2, { weapon: 'rusa9' });
+  } else if (name === 'hero') {
+    // The cover frame: a live fight in the gantry lane at the Gate Winch — you are
+    // mid-burst on the defender standing in the site ring, the painted GATE WINCH
+    // sign over his head, a teammate at your shoulder, and the smoke from the lane
+    // fight still hanging off to the left. main.js adds the tracer, the muzzle
+    // flash and the smoke volume itself.
+    G.phase = 'live';
+    G.round = 7;
+    G.score.atk = 4; G.score.def = 2;
+    G.timeLeft = 47;
+    you.money = 2650;
+    you.hp = 82; you.armor = 50; you.hasKit = true;
+    you.weapon.grenades = ['nanas', 'smoke'];
+    place(you, 26, 20, -2.034, { weapon: 'ar57', pitch: -0.05 });
+    you.weapon.inst.primary.ammo = 17;
+    place(a1, 24.2, 22.6, -1.9, { weapon: 'rusa9' });
+    place(a2, 31.5, 22.8, 0.6, { dead: true });
+    place(a3, 20, 26, -0.9, { weapon: 'ar57' });
+    place(d0, 35.2, 24.5, 1.107, { weapon: 'ar57', hp: 55 });
+    place(d1, 33, 16.8, 1.99, { weapon: 'rusa9', crouch: true });
+    place(d2, 11.5, -9.5, -1.8, { weapon: 'longbow12' });
+    place(d4, 2, -24, 3.14, { dead: true });
+    G.bomb.carriedBy = you.id;
+    G.feed.push({ killer: a1, victim: d4, weapon: 'rusa9', headshot: true, t: 0 });
+    G.feed.push({ killer: d0, victim: a2, weapon: 'ar57', headshot: false, t: 0 });
+    G.callouts = [{ name: a1.name, team: 'atk', text: 'contact B' }];
   } else if (name === 'over') {
     G.phase = 'over';
     G.round = 12;

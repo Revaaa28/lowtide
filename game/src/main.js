@@ -10,9 +10,9 @@
 
 import { G, newMatch, localPlayer } from './state.js';
 import { Input, initInput, down, pressed, consumeMouse, endStep, stageName, applyStage } from './input.js';
-import { moveActor } from './physics.js';
-import { initRenderer, buildScene, renderFrame, resize } from './render.js';
-import { attachFx } from './fx.js';
+import { moveActor, eyeHeight } from './physics.js';
+import { initRenderer, buildScene, renderFrame, resize, pulseMuzzle } from './render.js';
+import { attachFx, spawnTracer, stageSmoke } from './fx.js';
 import { updateWeapons } from './weapons.js';
 import { updateBots } from './bots.js';
 import { updateRounds } from './rounds.js';
@@ -34,6 +34,26 @@ if (stage) {
   applyStage(stage);
   overlay.style.display = 'none';
   document.body.classList.add('staged');
+  if (stage === 'hero') {
+    // The one dressing a pose cannot write into state: the shot itself. The tracer
+    // is fx.js's own pooled line, drawn from the muzzle offset weapons.js fires
+    // from to the target's chest; the smoke is fx.js's own volume, already
+    // deployed; the flash is render.js's, re-pulsed so it is lit whenever the
+    // shutter falls. Nothing here invents an object the game does not have.
+    const me = localPlayer();
+    const target = G.actors[5];
+    const ey = me.pos.y + eyeHeight(me);
+    const cp = Math.cos(me.pitch);
+    const dx = -Math.sin(me.yaw) * cp, dy = Math.sin(me.pitch), dz = -Math.cos(me.yaw) * cp;
+    const rx = Math.cos(me.yaw), rz = -Math.sin(me.yaw);
+    spawnTracer(
+      me.pos.x + dx * 0.55 + rx * 0.16, ey + dy * 0.55 - 0.14, me.pos.z + dz * 0.55 + rz * 0.16,
+      target.pos.x, target.pos.y + 1.15, target.pos.z,
+    );
+    stageSmoke(31.5, 28.5, 0, 0.5);
+    pulseMuzzle();
+    setInterval(pulseMuzzle, 90);
+  }
 } else {
   overlay.addEventListener('click', () => canvas.requestPointerLock());
   document.addEventListener('pointerlockchange', () => {

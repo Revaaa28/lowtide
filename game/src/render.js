@@ -43,8 +43,8 @@ function skyTexture() {
   cv.width = 16; cv.height = 512;
   const ctx = cv.getContext('2d');
   const grad = ctx.createLinearGradient(0, 0, 0, 512);
-  grad.addColorStop(0, '#2b3a58');
-  grad.addColorStop(0.45, '#71809c');
+  grad.addColorStop(0, '#31456b');
+  grad.addColorStop(0.45, '#7d8dab');
   grad.addColorStop(0.78, '#d9905f');
   grad.addColorStop(1, '#eab075');
   ctx.fillStyle = grad;
@@ -56,17 +56,17 @@ export function initRenderer(canvas) {
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   scene = new THREE.Scene();
   scene.background = skyTexture();
-  scene.fog = new THREE.Fog(0xcf9a6d, 55, 190);
+  scene.fog = new THREE.Fog(0xc7a184, 65, 215);
   camera = new THREE.PerspectiveCamera(75, 1, 0.08, 420);
   camera.rotation.order = 'YXZ';
   scene.add(camera);
 
-  const hemi = new THREE.HemisphereLight(0xbccfec, 0x55503f, 0.55);
+  const hemi = new THREE.HemisphereLight(0xcfe2f7, 0x5d5648, 0.9);
   scene.add(hemi);
-  sun = new THREE.DirectionalLight(0xffb36b, 1.7);
+  sun = new THREE.DirectionalLight(0xffb36b, 1.85);
   sun.position.set(-45, 34, -20);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
