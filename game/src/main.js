@@ -12,19 +12,22 @@ import { G, newMatch, localPlayer } from './state.js';
 import { Input, initInput, down, pressed, consumeMouse, endStep, stageName, applyStage } from './input.js';
 import { moveActor } from './physics.js';
 import { initRenderer, buildScene, renderFrame, resize } from './render.js';
+import { attachFx } from './fx.js';
 import { updateWeapons } from './weapons.js';
 import { updateBots } from './bots.js';
 import { updateRounds } from './rounds.js';
+import { initHUD, updateHUD } from './hud.js';
 
 const STEP = 1 / 60;
 const LOOK_SENS = 0.0021;
 
 const canvas = document.getElementById('game-canvas');
 const overlay = document.getElementById('start-overlay');
-initRenderer(canvas);
+attachFx(initRenderer(canvas).scene);
 initInput(canvas);
 newMatch();
 buildScene();
+initHUD();
 
 const stage = stageName();
 if (stage) {
@@ -89,5 +92,6 @@ function frame(t) {
     }
   }
   renderFrame();
+  updateHUD();
 }
 requestAnimationFrame(frame);
