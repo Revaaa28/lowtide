@@ -14,9 +14,13 @@ Features:
 - Per-weapon recoil patterns: every automatic walks its own climb, a shape to learn and pull against
 - Three grenades: Nanas Frag, Flash Charge and Smoke Pot
 - Bomb plant/defuse objective; a $400 Defuse Kit from the buy menu halves a defuse (5 s against 10 s)
-- Bot AI with routes, holds and reactions to sound and sight
-- A live minimap with honest spotting (teammates always, enemies only when seen or heard), round-history pips, and a kill feed that tags headshots
+- Bot navigation on a validated A* waypoint graph: 57 nodes with walkability-proven edges — every route a bot takes is a shortest path over ground the graph has verified, not a steering guess
+- A hearing bus for bot perception: gunfire, footsteps and plants are sound events with distance falloff and wall muffling (a shot through two lock gates is not heard; the same shot down an open lane is), and bots remember the last sound position and rotate toward it
+- Defender bots hold pre-aimed angles on the sites and peek when the hearing bus gives them a reason to
 - Bot radio callouts on first contact, plants and defuses
+- Warm dawn palette with a site identity you can read at a glance: site A (Pump House) is painted orange, site B (Gate Winch) teal, under an orange sun
+- Smoke Pot grenades build volumes of individual sprite puffs that genuinely block bot vision — stand behind one and the bots lose you
+- A live minimap with honest spotting (teammates always, enemies only when seen or heard), round-history pips, and a kill feed that tags headshots
 - Fixed-step simulation, decoupled from rendering
 - Zero network requests — the whole game is static files
 

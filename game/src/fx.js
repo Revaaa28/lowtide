@@ -2,10 +2,8 @@
 // pooled impact particles, and the grenade projectiles with their three effects (frag
 // blast, flash white-out, smoke volume). All visual objects are built once in attachFx
 // and recycled; nothing is allocated per shot or per frame. The one piece of game truth
-// this module owns is the smoke list, because bot vision has to ask whether a sight line
-// crosses a live smoke — that query is isSmokeBlocking, answered from the same volumes
-// the renderer draws. Damage from a blast is dealt through weapons.js's damageActor, so
-// armour, falloff bookkeeping and the kill feed behave exactly like a bullet's.
+// this module owns is the smoke list: bot vision asks whether a sight line crosses a
+// live smoke (isSmokeBlocking), answered from the same volumes the renderer draws.
 
 import * as THREE from 'three';
 import { GRENADES } from './config.js';
@@ -80,14 +78,37 @@ export function attachFx(scene) {
     grenades.push({ active: false, mesh, type: null, owner: null, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, fuseAt: 0, rested: false });
   }
 
-  const smokeGeo = new THREE.SphereGeometry(1, 18, 14);
+  // Smoke: a cluster of soft sprites per volume, never one ball — a mottled alpha
+  // puff (radial falloff, noise eaten out), a warm backlit tint, and a slow turn in
+  // updateFx so the mass drifts. The volumes isSmokeBlocking tests are unchanged.
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 128;
+  const x = cv.getContext('2d');
+  const gr = x.createRadialGradient(64, 64, 4, 64, 64, 62);
+  gr.addColorStop(0, 'rgba(255,255,255,0.95)');
+  gr.addColorStop(0.65, 'rgba(255,255,255,0.5)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = gr;
+  x.fillRect(0, 0, 128, 128);
+  x.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 240; i++) {
+    x.globalAlpha = Math.random() * 0.3;
+    x.beginPath(); x.arc(Math.random() * 128, Math.random() * 128, 2 + Math.random() * 8, 0, 7); x.fill();
+  }
+  const smokeTex = new THREE.CanvasTexture(cv);
+  const PUFFS = [[0, 0, 0, 1.75], [0.55, 0.15, 0.2, 1.25], [-0.52, 0.22, -0.18, 1.15], [0.16, 0.36, -0.48, 1.05], [-0.24, 0, 0.5, 1.1], [0.04, -0.22, -0.12, 1.3]];
   for (let i = 0; i < SMOKES_MAX; i++) {
-    const mesh = new THREE.Mesh(smokeGeo, new THREE.MeshBasicMaterial({
-      color: 0x9aa2a6, transparent: true, opacity: 0, depthWrite: false,
-    }));
-    mesh.visible = false;
-    root.add(mesh);
-    smokes.push({ mesh, x: 0, y: 0, z: 0, r: 0, bornAt: -1, until: 0 });
+    const mat = new THREE.SpriteMaterial({ map: smokeTex, color: 0xdccfbc, transparent: true, opacity: 0, depthWrite: false });
+    const grp = new THREE.Group();
+    for (const [px, py, pz, ps] of PUFFS) {
+      const puff = new THREE.Sprite(mat);
+      puff.position.set(px, py, pz);
+      puff.scale.set(ps, ps, 1);
+      grp.add(puff);
+    }
+    grp.visible = false;
+    root.add(grp);
+    smokes.push({ mesh: grp, mat, spin: 0.22 + i * 0.11, x: 0, y: 0, z: 0, r: 0, bornAt: -1, until: 0 });
   }
 
   boomLight = new THREE.PointLight(0xffa050, 0, 20);
@@ -122,8 +143,7 @@ function spawnParticles(x, y, z, n, speed, life, r, g, b, up) {
   }
 }
 
-// kind: 'wall' (dust and sparks off hard surfaces), 'hit' (a dark red puff on a body),
-// 'muzzle' (two sparks at a bot's barrel — the local player's flash is render.js's).
+// kind: 'wall' (dust and sparks), 'hit' (a dark red puff), 'muzzle' (barrel sparks).
 export function spawnImpact(x, y, z, kind) {
   if (!root) return;
   if (kind === 'hit') spawnParticles(x, y, z, 7, 1.6, 0.4, 0.45, 0.08, 0.06, 0.7);
@@ -136,9 +156,8 @@ export function spawnImpact(x, y, z, kind) {
 
 // --- grenades ------------------------------------------------------------------
 
-// Launches a grenade from the thrower's eye along the look direction weapons.js computed.
-// The projectile is simulated here: gravity, ground and wall bounces off physics.js, then
-// its effect by kind — frag and flash on a fuse, smoke when it comes to rest.
+// Launches a grenade from the thrower's eye along the look direction weapons.js
+// computed: gravity, bounces off physics.js, then its effect by kind.
 export function throwGrenadeFx(actor, type, ox, oy, oz, dx, dy, dz) {
   if (!root) return;
   for (const g of grenades) {
@@ -194,8 +213,7 @@ function popFlash(g) {
   boomLight.position.set(g.x, g.y + 0.3, g.z);
   boomLight.intensity = 60;
   sfx('flash');
-  // White-out scales with how squarely the actor faces the pop and fades with distance;
-  // a wall between the actor and the charge cancels it entirely.
+  // White-out scales with facing and distance; a wall in between cancels it.
   for (const a of G.actors) {
     if (!a.alive) continue;
     const ex = a.pos.x, ey = a.pos.y + 1.5, ez = a.pos.z;
@@ -229,8 +247,7 @@ function deploySmoke(g) {
 }
 
 // Poses one pooled smoke volume already deployed, for the staged screenshot scenes:
-// the same mesh and material a thrown Smoke Pot makes, set straight to its grown
-// state because the staged sim never steps updateFx to grow it.
+// the same cluster a thrown Smoke Pot makes, set straight to its grown state.
 export function stageSmoke(x, z, groundY, opacity = 0.85) {
   if (!root) return;
   const def = GRENADES.smoke;
@@ -241,7 +258,7 @@ export function stageSmoke(x, z, groundY, opacity = 0.85) {
     s.bornAt = -10; s.until = 1e9;
     s.mesh.position.set(s.x, s.y, s.z);
     s.mesh.scale.setScalar(def.radius);
-    s.mesh.material.opacity = opacity;
+    s.mat.opacity = opacity;
     s.mesh.visible = true;
     return;
   }
@@ -265,8 +282,7 @@ export function isSmokeBlocking(x1, y1, z1, x2, y2, z2) {
   return false;
 }
 
-// Per-step effects update, driven from weapons.js's updateWeapons so the fixed-step order
-// in main.js (weapons, bots, rounds) already accounts for blasts and flashes.
+// Per-step effects update, driven from weapons.js's updateWeapons.
 export function updateFx(dt, now) {
   fxNow = now;
   if (!root) return;
@@ -295,7 +311,8 @@ export function updateFx(dt, now) {
     const grow = Math.min(1, age / 0.8);
     const fade = Math.min(1, (s.until - now) / 1.5);
     s.mesh.scale.setScalar(Math.max(0.05, s.r * grow));
-    s.mesh.material.opacity = 0.88 * grow * fade;
+    s.mesh.rotation.y = age * s.spin;
+    s.mat.opacity = 0.55 * grow * fade;
   }
 
   for (const g of grenades) {

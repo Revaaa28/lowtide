@@ -121,10 +121,10 @@ export function applyStage(name) {
     G.buyUntil = TIMING.buy;
     you.money = 3400;
     place(you, -4, 25.5, 0);
-    place(a1, -8, 27, 0.3);
-    place(a2, 0, 27.5, -0.3);
-    place(a3, -12, 26, 0.8);
-    place(a4, 4, 26.5, -0.8);
+    place(a1, -8, 20.5, 3.0);
+    place(a2, 0, 20, 2.9);
+    place(a3, -12, 22, 2.6);
+    place(a4, 4, 21.5, -2.8);
   } else if (name === 'mid') {
     G.phase = 'live';
     G.round = 5;
@@ -147,11 +147,11 @@ export function applyStage(name) {
     G.bomb.x = -37.5; G.bomb.y = 0; G.bomb.z = -25;
     G.bomb.t = 22;
     G.bomb.carriedBy = null;
-    place(you, -33.2, -21.6, 0.93, { weapon: 'ar57' });
+    place(you, -34, -22.5, 0.9, { weapon: 'ar57', pitch: -0.28 });
     place(a1, -30, -24, 1.9, { weapon: 'ar57' });
     place(a2, -11.5, 11.5, 3.1, { weapon: 'longbow12' });
     place(d0, -36.9, -24.1, -0.7, { crouch: true, weapon: 'rusa9' });
-    place(d1, -37, -18.6, 3.14, { weapon: 'ar57' });
+    place(d1, -36, -29.5, 2.82, { weapon: 'ar57' });
     place(d2, -20, -15, -1.2, { weapon: 'rusa9' });
   } else if (name === 'hero') {
     // The cover frame: a live fight in the gantry lane at the Gate Winch — you are
@@ -183,7 +183,8 @@ export function applyStage(name) {
     G.phase = 'over';
     G.round = 12;
     G.score.atk = 7; G.score.def = 5;
-    G.winner = 'atk';
+    G.winner = 'atk'; G.matchOver = true;
+    G.actors.forEach((a, i) => { a.kills = (i * 7 + 3) % 11; a.deaths = (i * 5 + 2) % 9; });
     G.winReason = 'The charge detonated on the Pump House.';
     G.bomb.state = 'exploded';
     G.bomb.site = 'A';

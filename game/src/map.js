@@ -1,13 +1,11 @@
 // map.js — LOWTIDE, a drained river lock at dawn, described once as data and built from it.
-// The layout is three lanes running north-south: the warehouse lane in the west, the lock
-// chamber in the centre (a dry channel below grade, catwalks above it, two bridges across),
-// and the gantry lane in the east. Bomb site A is the Pump House at the north-west, site B
-// the Gate Winch at the south-east, so every round forces a cross-map decision. Colliders
-// are axis-aligned boxes {x0,z0,x1,z1,y0,h,kind}; physics.js collides and raycasts against
-// exactly this list, and buildMap() raises one mesh per collider, so what the player sees
-// is precisely what the simulation believes. groundZones are the walkable heights below or
-// above grade (the channel floor and its end steps); catwalk and bridge tops come from
-// their colliders. The nav graph is hand-laid over the same ground for bots.js pathing.
+// Three lanes run north-south: the warehouse lane west, the lock chamber in the centre
+// (a dry channel below grade, catwalks above it, two bridges across), the gantry lane
+// east. Site A is the Pump House (north-west), site B the Gate Winch (south-east), so
+// every round forces a cross-map decision. Colliders are axis-aligned boxes
+// {x0,z0,x1,z1,y0,h,kind}; physics.js collides and raycasts against exactly this list,
+// and buildMap() raises one mesh per collider, so what the player sees is precisely
+// what the simulation believes. groundZones are the walkable heights off grade.
 
 import * as THREE from 'three';
 
@@ -204,7 +202,7 @@ function seams(x, s) {
 }
 const TEX = {
   concrete: ctex(256, (x, s) => {
-    x.fillStyle = '#ccd0d2'; x.fillRect(0, 0, s, s);
+    x.fillStyle = '#ddd2bf'; x.fillRect(0, 0, s, s);
     blobs(x, s, 14, '#55534c', 0.16, 42);
     speck(x, s, 500, '#3f4245', 0.25); speck(x, s, 300, '#ffffff', 0.18);
     seams(x, s); streaks(x, s, 5, '#6e4a28', 0.13);
@@ -219,13 +217,13 @@ const TEX = {
     x.fillStyle = g; x.fillRect(0, s * 0.8, s, s * 0.2);
   }, 2, 1),
   floor: ctex(256, (x, s) => {
-    x.fillStyle = '#bcc0c2'; x.fillRect(0, 0, s, s);
-    blobs(x, s, 16, '#394046', 0.34, 58); blobs(x, s, 8, '#e9e4d2', 0.06, 30);
+    x.fillStyle = '#cfc2ab'; x.fillRect(0, 0, s, s);
+    blobs(x, s, 16, '#4a4038', 0.34, 58); blobs(x, s, 8, '#e9e4d2', 0.06, 30);
     speck(x, s, 700, '#2f3336', 0.3); speck(x, s, 260, '#f4f2ea', 0.15);
     seams(x, s);
   }, 14, 10),
   steel: ctex(256, (x, s) => {
-    x.fillStyle = '#b4bcc2'; x.fillRect(0, 0, s, s);
+    x.fillStyle = '#c2beb2'; x.fillRect(0, 0, s, s);
     for (let i = 0; i < s; i += 3) { x.fillStyle = rnd() > 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'; x.fillRect(i, 0, 1, s); }
     streaks(x, s, 12, '#7c4520', 0.3); blobs(x, s, 8, '#5e4632', 0.2, 26);
     speck(x, s, 220, '#2e2a24', 0.25);
@@ -317,16 +315,16 @@ function signTexture(name, sub, col) {
   return t;
 }
 
-// The palette of the place: wet concrete, rust, moss, steel — lit by a low warm sun.
+// The palette of the place: warm stone, rust, teal-painted steel — a low orange sun.
 const MATERIALS = {
-  concrete: new THREE.MeshStandardMaterial({ map: TEX.concrete, color: 0x8f939a, roughness: 0.95 }),
-  warehouse: new THREE.MeshStandardMaterial({ map: TEX.warehouse, color: 0x877c6c, roughness: 0.9 }),
+  concrete: new THREE.MeshStandardMaterial({ map: TEX.concrete, color: 0xc0ab8d, roughness: 0.95 }),
+  warehouse: new THREE.MeshStandardMaterial({ map: TEX.warehouse, color: 0xa8906e, roughness: 0.9 }),
   gate: new THREE.MeshStandardMaterial({ map: TEX.steel, color: 0xd09a58, roughness: 0.6, metalness: 0.35 }),
-  metal: new THREE.MeshStandardMaterial({ map: TEX.steel, color: 0x98a2ac, roughness: 0.5, metalness: 0.6 }),
+  metal: new THREE.MeshStandardMaterial({ map: TEX.steel, color: 0x7fa8a2, roughness: 0.5, metalness: 0.6 }),
   rust: new THREE.MeshStandardMaterial({ map: TEX.rust, roughness: 0.8, metalness: 0.2 }),
-  moss: new THREE.MeshStandardMaterial({ map: TEX.moss, color: 0x5f7046, roughness: 0.9 }),
-  crate: new THREE.MeshStandardMaterial({ map: TEX.crate, color: 0xa8875c, roughness: 0.85 }),
-  machine: new THREE.MeshStandardMaterial({ map: TEX.steel, color: 0x557276, roughness: 0.45, metalness: 0.55 }),
+  moss: new THREE.MeshStandardMaterial({ map: TEX.moss, color: 0x6d7f4c, roughness: 0.9 }),
+  crate: new THREE.MeshStandardMaterial({ map: TEX.crate, color: 0xb28e5e, roughness: 0.85 }),
+  machine: new THREE.MeshStandardMaterial({ map: TEX.steel, color: 0x699e96, roughness: 0.45, metalness: 0.55 }),
   hazard: new THREE.MeshStandardMaterial({ map: TEX.hazard, roughness: 0.8 }),
 };
 
@@ -345,12 +343,12 @@ export function buildMap(scene) {
   };
 
   // Ground slab and the channel: floor, side walls, end walls, a skin of leftover water.
-  const groundMat = new THREE.MeshStandardMaterial({ map: TEX.floor, color: 0x767a7e, roughness: 0.85 });
+  const groundMat = new THREE.MeshStandardMaterial({ map: TEX.floor, color: 0x96876e, roughness: 0.85 });
   box3(-60, -0.5, -45, 60, 0, 45, groundMat, false);
-  const darkMat = new THREE.MeshStandardMaterial({ map: TEX.concrete, color: 0x51555a, roughness: 0.95 });
+  const darkMat = new THREE.MeshStandardMaterial({ map: TEX.concrete, color: 0x776853, roughness: 0.95 });
   const wetTex = TEX.floor.clone();
   wetTex.repeat.set(2, 10); wetTex.needsUpdate = true;
-  const wetMat = new THREE.MeshStandardMaterial({ map: wetTex, color: 0x5c6165, roughness: 0.42, metalness: 0.18 });
+  const wetMat = new THREE.MeshStandardMaterial({ map: wetTex, color: 0x776a58, roughness: 0.42, metalness: 0.18 });
   box3(-6, -2.5, -30, 6, -2.2, 30, wetMat, false);
   box3(-6.6, -2.2, -30, -6, 0, 30, darkMat, false);
   box3(6, -2.2, -30, 6.6, 0, 30, darkMat, false);
@@ -358,7 +356,7 @@ export function buildMap(scene) {
   box3(-6, -2.2, 30, 6, 0, 30.6, darkMat, false);
   const water = new THREE.Mesh(
     new THREE.PlaneGeometry(11.6, 58),
-    new THREE.MeshStandardMaterial({ color: 0x1d3038, roughness: 0.06, metalness: 0.9 }),
+    new THREE.MeshStandardMaterial({ color: 0x2e524e, roughness: 0.14, metalness: 0.5 }),
   );
   water.rotation.x = -Math.PI / 2;
   water.position.set(0, -2.12, 0);
@@ -430,7 +428,7 @@ export function buildMap(scene) {
     // The painted roundel on the concrete inside the ring: letter + circle, worn thin.
     const decal = new THREE.Mesh(
       new THREE.PlaneGeometry(s.r * 2 - 1, s.r * 2 - 1),
-      new THREE.MeshBasicMaterial({ map: siteDecal(key, key === 'A' ? '#e86a2a' : '#5b8dd6'), transparent: true, depthWrite: false }),
+      new THREE.MeshBasicMaterial({ map: siteDecal(key, key === 'A' ? '#e86a2a' : '#3fb3a4'), transparent: true, depthWrite: false }),
     );
     decal.rotation.x = -Math.PI / 2;
     decal.position.set(s.x, 0.05, s.z);
@@ -438,13 +436,12 @@ export function buildMap(scene) {
   }
 
   // Wall signs, painted on the buildings and read down the approach: the Pump House
-  // name on its south wall, over the yard the attackers cross; the Gate Winch name
-  // on the hut's west wall, down the gantry lane. Each is sized to the wall it sits
-  // on — paint does not float past the edges of its building.
+  // name on its south wall; the Gate Winch name on the hut's west wall. Each is
+  // sized to the wall it sits on — paint does not float past the building's edges.
   const signA = new THREE.Mesh(new THREE.PlaneGeometry(3.3, 1.03), new THREE.MeshBasicMaterial({ map: signTexture('PUMP HOUSE', 'SITE A', '#e86a2a'), transparent: true, depthWrite: false }));
   signA.position.set(-40.25, 1.9, -20.72);
   scene.add(signA);
-  const signB = new THREE.Mesh(new THREE.PlaneGeometry(7.6, 2.375), new THREE.MeshBasicMaterial({ map: signTexture('GATE WINCH', 'SITE B', '#5b8dd6'), transparent: true, depthWrite: false }));
+  const signB = new THREE.Mesh(new THREE.PlaneGeometry(7.6, 2.375), new THREE.MeshBasicMaterial({ map: signTexture('GATE WINCH', 'SITE B', '#3fb3a4'), transparent: true, depthWrite: false }));
   signB.position.set(38.22, 1.78, 20);
   signB.rotation.y = -Math.PI / 2;
   scene.add(signB);
@@ -477,12 +474,12 @@ export function buildMap(scene) {
   // The river east of the fence and the far bank's silhouettes, for depth at dawn.
   const river = new THREE.Mesh(
     new THREE.PlaneGeometry(46, 130),
-    new THREE.MeshStandardMaterial({ color: 0x27383f, roughness: 0.2, metalness: 0.7 }),
+    new THREE.MeshStandardMaterial({ color: 0x39585a, roughness: 0.16, metalness: 0.7 }),
   );
   river.rotation.x = -Math.PI / 2;
   river.position.set(74, -0.4, 0);
   scene.add(river);
-  const silMat = new THREE.MeshBasicMaterial({ color: 0x2c3542 });
+  const silMat = new THREE.MeshBasicMaterial({ color: 0x46525a });
   const silhouettes = [[-58, -20, 10, 12], [-56, 14, 8, 8], [58, -30, 12, 15], [62, 24, 9, 10], [-20, -52, 16, 9], [26, -54, 12, 12], [10, 54, 18, 8]];
   for (const [sx, sz, sw, sh] of silhouettes) {
     const m = new THREE.Mesh(new THREE.BoxGeometry(sw, sh, 6), silMat);

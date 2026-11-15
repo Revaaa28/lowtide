@@ -11,6 +11,7 @@ import { MAP } from './map.js';
 import { ECON, TIMING } from './config.js';
 import { down, pressed } from './input.js';
 import { sfx } from './audio.js';
+import { pushNoise } from './weapons.js';
 
 let feedPaid = 0;
 let planterId = -1;
@@ -174,7 +175,11 @@ export function updateRounds(dt, now) {
       G.bomb.t -= dt;
       // The beep quickens as the timer runs down: 1 s, then 0.5 s, then 0.25 s.
       const interval = G.bomb.t > 10 ? 1 : G.bomb.t > 5 ? 0.5 : 0.25;
-      if (now - lastBeepAt >= interval) { lastBeepAt = now; sfx('beep'); }
+      if (now - lastBeepAt >= interval) {
+        lastBeepAt = now; sfx('beep');
+        // The beeper lands on the hearing bus too.
+        pushNoise(G.bomb.x, G.bomb.z, 26, 'beep');
+      }
       if (aliveCount('def') === 0) endRound('atk', 'elim');
       else if (G.bomb.t <= 0) {
         G.bomb.state = 'exploded';

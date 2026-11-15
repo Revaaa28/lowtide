@@ -1,81 +1,23 @@
-// bots.js — the nine non-player actors: perception, a tactical state machine and the
-// team plan. Perception is honest: a bot knows an enemy only when it can see them
-// (range, a 100° cone, a physics raycast for walls, smoke blocks sight) or hear them
-// (weapons.js drops shot events into hearEvents; footsteps are added here). Brains run
-// on a staggered think tick; movement and firing run every step. The plan is legible
-// team play: attackers commit to a site (sometimes split), defenders split across both
-// sites with a mid rotator, a plant sends every defender to retake and every attacker
-// to a crossfire hold, and a hurt or outnumbered bot falls back instead of feeding.
+// bots.js — the nine non-player actors: perception, a tactical state machine
+// and the team plan. Perception is honest: a bot knows an enemy only when it
+// can see them (range, a 100° cone, a physics raycast, smoke blocks sight) or
+// hear them through the hearing bus (falloff, wall muffling, lastHeard memory).
 
 import { G } from './state.js';
 import { MAP } from './map.js';
 import { moveActor, rayHit, eyeHeight } from './physics.js';
+import { pathTo, nearestNode, nodesNear, NAVnodes, ADJ, wallsBetween } from './nav.js';
 import { tryFire, startReload, switchWeapon, buyWeapon, buyGrenade, buyKit, throwGrenade } from './weapons.js';
 import { isSmokeBlocking } from './fx.js';
 import { sfx } from './audio.js';
 
-// --- nav graph ---------------------------------------------------------------
-
-const ADJ = MAP.nav.nodes.map(() => []);
-for (const [a, b] of MAP.nav.edges) { ADJ[a].push(b); ADJ[b].push(a); }
-
-function nearestNode(x, z) {
-  let best = 0, bd = Infinity;
-  for (const n of MAP.nav.nodes) {
-    const d = (n.x - x) ** 2 + (n.z - z) ** 2;
-    if (d < bd) { bd = d; best = n.id; }
-  }
-  return best;
-}
-
-function nodesNear(x, z, r) {
-  return MAP.nav.nodes
-    .filter((n) => Math.hypot(n.x - x, n.z - z) <= r)
-    .sort((p, q) => Math.hypot(p.x - x, p.z - z) - Math.hypot(q.x - x, q.z - z))
-    .map((n) => n.id);
-}
-
-// A* over the waypoint graph; returns a list of node ids from start's node to goal's.
-function pathTo(a, goalNode) {
-  const start = nearestNode(a.pos.x, a.pos.z);
-  if (start === goalNode) return [goalNode];
-  const open = new Set([start]);
-  const came = new Map();
-  const gs = new Map([[start, 0]]);
-  const goal = MAP.nav.nodes[goalNode];
-  const h = (id) => Math.hypot(MAP.nav.nodes[id].x - goal.x, MAP.nav.nodes[id].z - goal.z);
-  while (open.size) {
-    let cur = -1, bf = Infinity;
-    for (const id of open) {
-      const f = (gs.get(id) || 0) + h(id);
-      if (f < bf) { bf = f; cur = id; }
-    }
-    if (cur === goalNode) {
-      const path = [cur];
-      while (came.has(cur)) { cur = came.get(cur); path.unshift(cur); }
-      return path;
-    }
-    open.delete(cur);
-    for (const nb of ADJ[cur]) {
-      const w = Math.hypot(MAP.nav.nodes[nb].x - MAP.nav.nodes[cur].x, MAP.nav.nodes[nb].z - MAP.nav.nodes[cur].z);
-      const ng = (gs.get(cur) || 0) + w;
-      if (ng < (gs.get(nb) === undefined ? Infinity : gs.get(nb))) {
-        gs.set(nb, ng);
-        came.set(nb, cur);
-        open.add(nb);
-      }
-    }
-  }
-  return [start];
-}
-
-// --- brains ------------------------------------------------------------------
+// --- brains ---
 
 function brain(a) {
   if (!a.brain) {
     a.brain = {
       state: 'route', path: [], pi: 0, goalNode: -1, holdNode: -1, role: '',
-      seen: new Map(), vis: new Set(), targetId: -1, reactAt: 0, heard: null,
+      seen: new Map(), vis: new Set(), targetId: -1, reactAt: 0, lastHeard: null,
       thinkAt: Math.random() * 0.1, scanSeed: Math.random() * 10,
       lastX: a.pos.x, lastZ: a.pos.z, stuckAt: 0, stepAt: 0,
       fireUntil: 0, pauseUntil: 0, throwAt: 0, boughtRound: 0, liveRound: 0,
@@ -88,12 +30,9 @@ let planRound = -1;
 let planSite = 'A';
 let lastPhase = '';
 
-// --- callouts ------------------------------------------------------------------
+// --- callouts ---
 
-// Bots talk, a little: a first contact, a plant or a defuse starting is pushed into
-// G.callouts (kept here — G.feed is kills only) and hud.js shows the lines beside the
-// kill feed. A per-bot cooldown and a per-round cap keep it to a few lines a round:
-// radio discipline, not a commentary track.
+// Bots talk, a little: contacts, plants and defuses go into G.callouts, capped.
 let callRound = -1;
 function callout(a, b, text, now, force = false) {
   if (G.round !== callRound) { callRound = G.round; G.callouts = []; }
@@ -113,15 +52,27 @@ function siteLabel(x, z) {
 
 function setGoal(a, b, node, state = 'route') {
   b.goalNode = node;
-  b.path = pathTo(a, node);
+  b.path = pathTo(a.pos.x, a.pos.z, node);
   b.pi = 0;
   b.state = state;
   b.holdYaw = undefined;
 }
 
-// The round plan, assigned once per buy phase: attackers pick a site (42% A, 42% B,
-// 16% a 3-2 split), the carrier walks the site heart, the rest take cover nodes near
-// it; defenders split 2-3 across the sites and one holds mid as the rotator.
+// Pre-aim: aim down the lane — the nav node two hops toward the enemy spawn.
+function pickHoldAngle(a, b) {
+  const from = b.holdNode >= 0 ? b.holdNode : nearestNode(a.pos.x, a.pos.z);
+  const foe = MAP.spawns[a.team === 'def' ? 'atk' : 'def'][2];
+  const cand = new Set(ADJ[from].flatMap((id) => [id, ...ADJ[id]]));
+  let pick = null, pd = Infinity;
+  for (const id of cand) {
+    const n = NAVnodes[id], d = (n.x - foe[0]) ** 2 + (n.z - foe[1]) ** 2;
+    if (d < pd) { pd = d; pick = n; }
+  }
+  if (pick) b.holdYaw = Math.atan2(-(pick.x - a.pos.x), -(pick.z - a.pos.z));
+}
+
+// The round plan: attackers pick a site (42% A, 42% B, 16% split);
+// defenders split 2-3 across the sites, one holds mid as the rotator.
 function assignPlans() {
   planRound = G.round;
   const r = Math.random();
@@ -160,8 +111,6 @@ function assignPlans() {
   });
 }
 
-// After a plant the round changes shape: the nearest defender becomes the defuser and
-// walks the bomb, the rest of the defence floods the site, attackers dig into holds.
 function assignPlanted() {
   const bx = G.bomb.x, bz = G.bomb.z;
   const defs = G.actors.filter((a) => a.bot && a.team === 'def' && a.alive)
@@ -190,7 +139,7 @@ function assignPlanted() {
   }
 }
 
-// --- perception --------------------------------------------------------------
+// --- perception ---
 
 function angDiff(a, b) {
   let d = a - b;
@@ -198,6 +147,8 @@ function angDiff(a, b) {
   while (d < -Math.PI) d += Math.PI * 2;
   return d;
 }
+
+const HEAR_RANGE = { shot: 45, explosion: 60, throw: 12, step: 9, beep: 26 };
 
 function perceive(a, b, now) {
   const prevVis = b.vis;
@@ -225,8 +176,15 @@ function perceive(a, b, now) {
       b.seen.set(e.id, { x: e.pos.x, y: e.pos.y, z: e.pos.z, t: now });
     }
   }
-  // Hearing: drain the event queue weapons.js and footsteps filled.
-  for (const ev of a.hearEvents) b.heard = { x: ev.x, z: ev.z, t: now, kind: ev.kind };
+  // Hearing bus: every noise queued in hearEvents (shots, throws, explosions,
+  // footsteps, the bomb's beeper) is run through distance falloff and wall
+  // muffling — each wall on the line cuts the audible range to 62%.
+  for (const ev of a.hearEvents) {
+    const d = Math.hypot(ev.x - a.pos.x, ev.z - a.pos.z);
+    if (d < 1.2) continue;
+    const range = (HEAR_RANGE[ev.kind] || 12) * 0.62 ** wallsBetween(a.pos.x, a.pos.z, ev.x, ev.z);
+    if (d <= range) b.lastHeard = { x: ev.x, z: ev.z, t: now, kind: ev.kind };
+  }
   a.hearEvents.length = 0;
   // Target: nearest visible enemy; a fresh acquisition costs a reaction delay.
   let best = -1, bd = Infinity;
@@ -252,11 +210,11 @@ function lastKnown(b, now) {
   let best = null;
   for (const s of b.seen.values()) if (!best || s.t > best.t) best = s;
   if (best && now - best.t < 4) return best;
-  if (b.heard && now - b.heard.t < 3.5) return b.heard;
+  if (b.lastHeard && now - b.lastHeard.t < (b.lastHeard.kind === 'step' ? 2.5 : 4)) return b.lastHeard;
   return null;
 }
 
-// --- decisions (think tick) ----------------------------------------------------
+// --- decisions (think tick) ---
 
 function decide(a, b, now) {
   const inst = a.weapon.inst[a.weapon.current];
@@ -285,7 +243,7 @@ function decide(a, b, now) {
     if (carrier === a && b.state !== 'engage') { setGoal(a, b, nearestNode(G.bomb.x, G.bomb.z)); return; }
   }
 
-  // The carrier's whole job is the plant: at the site, unspotted, it channels.
+  // The carrier's whole job is the plant.
   if (a.team === 'atk' && G.bomb.carriedBy === a.id && G.bomb.state === 'carried') {
     const s = MAP.sites[b.planSite || planSite] || MAP.sites.A;
     const d = Math.hypot(s.x - a.pos.x, s.z - a.pos.z);
@@ -304,7 +262,7 @@ function decide(a, b, now) {
   }
   if (b.state === 'plant') { a.plantT = 0; if (G.bomb.state === 'planting') G.bomb.state = 'carried'; b.state = 'hold'; }
 
-  // Hurt and outnumbered, or last alive against three: fall back and hold a line.
+  // Hurt and outnumbered: fall back and hold a line.
   const mates = G.actors.filter((x) => x.team === a.team && x.alive).length;
   const foes = G.actors.filter((x) => x.team !== a.team && x.alive).length;
   if ((a.hp < 32 && foes >= 2) || (mates === 1 && foes >= 3)) {
@@ -328,7 +286,7 @@ function decide(a, b, now) {
   }
 }
 
-// --- actions (every step) ------------------------------------------------------
+// --- actions (every step) ---
 
 function faceToward(a, wantYaw, dt, rate = 4.2) {
   const d = angDiff(wantYaw, a.yaw);
@@ -338,13 +296,13 @@ function faceToward(a, wantYaw, dt, rate = 4.2) {
 
 function followPath(a, b, dt, now) {
   if (b.pi >= b.path.length) return true;
-  const n = MAP.nav.nodes[b.path[b.pi]];
+  const n = NAVnodes[b.path[b.pi]];
   const dx = n.x - a.pos.x, dz = n.z - a.pos.z;
   const d = Math.hypot(dx, dz);
   if (d < 0.8) { b.pi++; return b.pi >= b.path.length; }
   faceToward(a, Math.atan2(-dx, -dz), dt, 5);
   moveActor(a, dx / d, dz / d, dt);
-  // Stuck detection: barely moved in half a second of trying — hop, then skip a node.
+  // Stuck: barely moved in half a second — hop, then skip a node.
   if (now - b.stuckAt > 0.5) {
     const moved = Math.hypot(a.pos.x - b.lastX, a.pos.z - b.lastZ);
     if (moved < 0.22) {
@@ -353,9 +311,7 @@ function followPath(a, b, dt, now) {
     }
     b.lastX = a.pos.x; b.lastZ = a.pos.z; b.stuckAt = now;
   }
-  // Footsteps: audible to enemies nearby, and to the player as soft taps. A bot in
-  // retreat moves quietly — falling back is done carefully or not at all — which is
-  // the same silence the player's Shift quiet-walk buys (weapons.js).
+  // Footsteps: audible to enemies nearby; a retreating bot moves quietly.
   if (now >= b.stepAt && b.state !== 'retreat') {
     b.stepAt = now + 0.38;
     for (const e of G.actors) {
@@ -375,8 +331,7 @@ function engage(a, b, dt, now) {
   const dx = known.x - a.pos.x, dz = known.z - a.pos.z;
   const dist = Math.hypot(dx, dz);
   const visible = b.vis.has(b.targetId);
-  // Aim with human error: worse at range, worse against a moving target, halved when
-  // the bot is planted and crouched — the same trade the player is offered.
+  // Aim with human error: worse at range and against movers, better crouched.
   const tSpeed = Math.hypot(t.vel.x, t.vel.z);
   const err = (0.016 + dist * 0.0008 + tSpeed * 0.0035) * (a.crouch ? 0.6 : 1);
   const wantYaw = Math.atan2(-dx, -dz) + Math.sin(now * 7 + a.id * 3.1) * err;
@@ -386,12 +341,11 @@ function engage(a, b, dt, now) {
   a.pitch += Math.max(-3 * dt, Math.min(3 * dt, wantPitch - a.pitch));
   a.crouch = dist > 16 && visible;
   if (!visible) {
-    // Lost them: push the last known position.
     if (followPath(a, b, dt, now)) b.state = 'hold';
     if (!b.path.length) setGoal(a, b, nearestNode(known.x, known.z));
     return;
   }
-  // Stop-and-fire discipline: halt, let the reaction delay pass, fire in bursts.
+  // Stop-and-fire: halt, let the reaction delay pass, fire in bursts.
   if (dist < 5) moveActor(a, -dx / dist, -dz / dist, dt);
   else moveActor(a, 0, 0, dt);
   if (now < b.reactAt) return;
@@ -404,7 +358,6 @@ function engage(a, b, dt, now) {
     b.pauseUntil = now + 0.28 + Math.random() * 0.3;
     b.fireUntil = 0;
   }
-  // A frag at a heard-but-unseen enemy, now and then.
   if (a.weapon.grenades.includes('nanas') && now > b.throwAt && dist > 8 && dist < 20 && Math.random() < 0.004) {
     throwGrenade(a, 'nanas');
     b.throwAt = now + 9;
@@ -420,8 +373,7 @@ function buyLogic(a, b) {
     else if (a.money >= 2700) buyWeapon(a, 'ar57');
     else if (a.money >= 1200) buyWeapon(a, 'rusa9');
   }
-  // Defenders carry the defuse kit before anything else: it is the cheapest seconds
-  // in the game, and rounds.js honours hasKit the moment a retake reaches the charge.
+  // Defenders buy the defuse kit first.
   if (a.team === 'def' && !a.hasKit && a.money >= 400) buyKit(a);
   if (a.money >= 900 && !w.grenades.includes('nanas')) buyGrenade(a, 'nanas');
   if (a.money >= 700) buyGrenade(a, a.team === 'atk' ? 'smoke' : 'flash');
@@ -452,10 +404,29 @@ export function updateBots(dt, now) {
         if (followPath(a, b, dt, now)) b.state = 'hold';
         break;
       case 'hold': {
-        moveActor(a, 0, 0, dt);
         a.crouch = a.id % 2 === 0;
-        if (b.holdYaw === undefined) b.holdYaw = a.yaw;
-        faceToward(a, b.holdYaw + Math.sin(now * 0.45 + b.scanSeed) * 0.9, dt, 1.6);
+        if (b.holdYaw === undefined) pickHoldAngle(a, b);
+        // Peek: a short strafe toward the lane and back, every few seconds.
+        let mx = 0, mz = 0;
+        if (a.pos.y < 0.4 && !b.vis.size) {
+          if (b.peekAt === undefined || now > b.peekAt + 0.66) {
+            b.peekAt = now + 2 + Math.random() * 2.5;
+            b.peekDir = Math.random() < 0.5 ? -1 : 1;
+          }
+          const pt = now - b.peekAt;
+          if (pt > 0) {
+            const s = (pt < 0.33 ? 1 : -1) * b.peekDir;
+            mx = Math.cos(a.yaw) * s; mz = -Math.sin(a.yaw) * s;
+            a.crouch = false;
+          }
+        }
+        moveActor(a, mx, mz, dt);
+        // A fresh sound snaps the aim onto it; else scan around the lane.
+        let want = b.holdYaw + Math.sin(now * 0.45 + b.scanSeed) * 0.38;
+        if (!b.vis.size && b.lastHeard && now - b.lastHeard.t < 2) {
+          want = Math.atan2(-(b.lastHeard.x - a.pos.x), -(b.lastHeard.z - a.pos.z));
+        }
+        faceToward(a, want, dt, 1.6);
         break;
       }
       case 'engage':

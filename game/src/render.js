@@ -3,8 +3,7 @@
 // map (map.js) and creates the actor meshes, the bomb and the first-person viewmodel;
 // syncActors copies actor state onto meshes once a frame; renderFrame draws from the
 // local player's eye. The renderer never writes game state — the one feedback channel is
-// FX below, which weapons.js and hud.js poke to ask for a muzzle flash, a camera kick or
-// a hitmarker pulse, and which this module consumes.
+// FX below, which weapons.js and hud.js poke for a muzzle flash, camera kick or hitmarker.
 
 import * as THREE from 'three';
 import { G, localPlayer } from './state.js';
@@ -43,10 +42,10 @@ function skyTexture() {
   cv.width = 16; cv.height = 512;
   const ctx = cv.getContext('2d');
   const grad = ctx.createLinearGradient(0, 0, 0, 512);
-  grad.addColorStop(0, '#31456b');
-  grad.addColorStop(0.45, '#7d8dab');
-  grad.addColorStop(0.78, '#d9905f');
-  grad.addColorStop(1, '#eab075');
+  grad.addColorStop(0, '#2b5a6a');
+  grad.addColorStop(0.45, '#6f9aa0');
+  grad.addColorStop(0.78, '#e59a52');
+  grad.addColorStop(1, '#ffcf96');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 16, 512);
   return new THREE.CanvasTexture(cv);
@@ -57,17 +56,19 @@ export function initRenderer(canvas) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.12;
   scene = new THREE.Scene();
   scene.background = skyTexture();
-  scene.fog = new THREE.Fog(0xc7a184, 65, 215);
+  scene.fog = new THREE.Fog(0xe2a878, 55, 200);
   camera = new THREE.PerspectiveCamera(75, 1, 0.08, 420);
   camera.rotation.order = 'YXZ';
   scene.add(camera);
 
-  const hemi = new THREE.HemisphereLight(0xcfe2f7, 0x5d5648, 0.9);
+  const hemi = new THREE.HemisphereLight(0xa9ccd2, 0x8a684c, 1.05);
   scene.add(hemi);
-  sun = new THREE.DirectionalLight(0xffb36b, 1.85);
-  sun.position.set(-45, 34, -20);
+  sun = new THREE.DirectionalLight(0xffa050, 2.35);
+  sun.position.set(-52, 25, -22);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.camera.left = -58;
@@ -152,8 +153,7 @@ function buildBomb() {
 
 // --- viewmodel ---------------------------------------------------------------
 // One small gun model per weapon id, built lazily and toggled by visibility: receiver,
-// barrel, grip, magazine, and a scope cylinder on the zoom weapons — enough silhouette
-// for the screenshots and for the player to read what they are holding.
+// barrel, grip, magazine, and a scope cylinder on the zoom weapons.
 
 function vmGun(id) {
   if (vmByWeapon.has(id)) return vmByWeapon.get(id);
